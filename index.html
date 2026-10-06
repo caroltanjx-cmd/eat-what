@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+</head>
+<body>
+<title>Eat What?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: ballot header with tally, a 2-col grid of cuisine tickets, then a roll call of who picked what. */
+:root {
+  --bg: #eef2ef;
+  --surface: #ffffff;
+  --ink: #15241f;
+  --muted: #5b6b65;
+  --line: #d3ddd8;
+  --accent: #e2a21a;
+  --accent-ink: #2a1d00;
+  --accent-soft: #fbf0d4;
+  --picked: #15241f;
+  --picked-ink: #f3f6f4;
+  --warn: #b5432c;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "DM Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101814; --surface: #17221d; --ink: #e6ede9; --muted: #96a8a0; --line: #2a3a33;
+    --accent: #f0b43a; --accent-ink: #231800; --accent-soft: #3a2e10;
+    --picked: #e6ede9; --picked-ink: #101814; --warn: #ef8a72; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101814; --surface: #17221d; --ink: #e6ede9; --muted: #96a8a0; --line: #2a3a33;
+  --accent: #f0b43a; --accent-ink: #231800; --accent-soft: #3a2e10;
+  --picked: #e6ede9; --picked-ink: #101814; --warn: #ef8a72; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 920px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 56px; display: grid; gap: 28px; }
+
+header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 16px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 4px; }
+h1 { font-family: var(--display); font-weight: 800; font-size: clamp(34px, 7vw, 54px); line-height: 1; letter-spacing: -.02em; margin: 0; text-wrap: balance; }
+.who { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px 6px 6px; min-width: 0; }
+.who img { width: 28px; height: 28px; border-radius: 50%; flex: none; }
+.who span { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.status { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: baseline; border-block: 1px solid var(--line); padding-block: 14px; }
+.status .lead { font-family: var(--display); font-weight: 700; font-size: 20px; flex: 1 1 260px; min-width: 0; }
+.status .lead em { font-style: normal; background: var(--accent); color: var(--accent-ink); padding: 0 6px; border-radius: 4px; }
+.status .meta { font-family: var(--mono); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.slots { display: inline-flex; gap: 6px; vertical-align: middle; margin-left: 6px; }
+.slots i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink); display: inline-block; }
+.slots i.on { background: var(--ink); }
+
+.reset { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 14px; }
+.reset[hidden] { display: none; }
+.btn { font: inherit; font-weight: 600; font-size: 14px; padding: 6px 14px; border-radius: 6px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.btn:hover:not(:disabled) { border-color: var(--ink); }
+.btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.danger { background: var(--warn); border-color: var(--warn); color: var(--surface); }
+.notice { margin: 0; padding: 12px 14px; border-radius: 8px; background: var(--accent-soft); color: var(--ink); font-size: 14px; }
+.notice.err { color: var(--warn); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.ticket {
+  appearance: none; text-align: left; font: inherit; color: var(--ink); cursor: pointer;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 14px 16px; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: start;
+  transition: background .15s, border-color .15s, transform .1s;
+}
+.ticket:hover:not(:disabled) { border-color: var(--ink); }
+.ticket:active:not(:disabled) { transform: translateY(1px); }
+.ticket:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.ticket:disabled { cursor: default; }
+.ticket[aria-pressed="true"] { background: var(--picked); color: var(--picked-ink); border-color: var(--picked); }
+.ticket[aria-pressed="true"] .dish, .ticket[aria-pressed="true"] .count small { color: inherit; opacity: .75; }
+.ticket .name { font-family: var(--display); font-weight: 700; font-size: 19px; line-height: 1.2; }
+.ticket .dish { grid-column: 1; color: var(--muted); font-size: 13px; }
+.ticket .count { grid-row: 1 / span 2; grid-column: 2; text-align: right; font-family: var(--mono); font-size: 22px; font-weight: 500; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.ticket .count small { display: block; font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+.ticket .bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; margin-top: 8px; }
+.ticket .bar b { display: block; height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+.ticket .faces { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; min-height: 0; }
+.ticket .faces img { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--surface); }
+.ticket[aria-pressed="true"] .faces img { border-color: var(--picked); }
+.ticket .check { font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+
+h2 { font-family: var(--display); font-weight: 700; font-size: 22px; margin: 0 0 10px; }
+.roll { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.roll li { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding-block: 10px; border-bottom: 1px solid var(--line); }
+.roll img { width: 32px; height: 32px; border-radius: 50%; }
+.roll .person { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roll .person small { font-weight: 400; color: var(--muted); }
+.roll .picks { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.chip { font-size: 13px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.empty { color: var(--muted); padding-block: 16px; border-block: 1px dashed var(--line); margin: 0; }
+@media (max-width: 480px) {
+  .roll li { grid-template-columns: 32px minmax(0, 1fr); }
+  .roll .picks { grid-column: 2; justify-content: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">Pick up to two</p>
+      <h1>Eat What?</h1>
+    </div>
+    <div class="who" id="who" hidden><img id="whoImg" alt=""><span id="whoName"></span></div>
+  </header>
+
+  <div class="status">
+    <div class="lead" id="lead">Loading votes…</div>
+    <div class="meta" id="meta">Your picks <span class="slots" id="slots"><i></i><i></i></span></div>
+  </div>
+
+  <div class="reset" id="reset" hidden>
+    <button type="button" class="btn" id="resetBtn">Reset all votes</button>
+    <span id="resetConfirm" hidden>Clear every vote for everyone? This can't be undone.
+      <button type="button" class="btn danger" id="resetYes">Clear votes</button>
+      <button type="button" class="btn" id="resetNo">Cancel</button>
+    </span>
+  </div>
+
+  <p class="notice" id="notice" hidden></p>
+
+  <section aria-label="Cuisines">
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section>
+    <h2>Who picked what</h2>
+    <p class="empty" id="rollEmpty">No votes yet. Tap a cuisine above to cast the first one.</p>
+    <ul class="roll" id="roll" hidden></ul>
+  </section>
+</div>
+
+<script>
+const CUISINES = [
+  { id: "japanese", name: "Japanese", dish: "Ramen, sushi, katsu don" },
+  { id: "chinese", name: "Chinese", dish: "Dim sum, roast meats, hotpot" },
+  { id: "korean", name: "Korean", dish: "Bibimbap, fried chicken, BBQ" },
+  { id: "thai", name: "Thai", dish: "Pad kra pao, tom yum, green curry" },
+  { id: "indian", name: "Indian", dish: "Biryani, thali, butter chicken" },
+  { id: "malay", name: "Malay", dish: "Nasi lemak, mee rebus, rendang" },
+  { id: "vietnamese", name: "Vietnamese", dish: "Pho, banh mi, bun cha" },
+  { id: "italian", name: "Italian", dish: "Pasta, pizza, risotto" },
+  { id: "mexican", name: "Mexican", dish: "Tacos, burritos, quesadillas" },
+  { id: "middle-eastern", name: "Middle Eastern", dish: "Shawarma, falafel, mezze" },
+];
+const MAX = 2;
+const VALID = new Set(CUISINES.map(c => c.id));
+
+let db = null, user = null, myId = null;
+let votes = new Map();     // userId -> picks[]
+let loaded = false, readOnly = false;
+let writeChain = Promise.resolve();
+const $ = id => document.getElementById(id);
+
+function notice(text, isErr) {
+  const n = $("notice");
+  n.textContent = text || "";
+  n.classList.toggle("err", !!isErr);
+  n.hidden = !text;
+}
+
+function myPicks() { return votes.get(myId) || []; }
+
+function buildGrid() {
+  const grid = $("grid");
+  for (const c of CUISINES) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "ticket"; b.id = "c-" + c.id;
+    b.setAttribute("aria-pressed", "false");
+    b.innerHTML = `<span class="name"></span><span class="count"><span class="n">0</span><small>votes</small></span>
+      <span class="dish"></span><span class="bar"><b></b></span><span class="faces"></span>`;
+    b.querySelector(".name").textContent = c.name;
+    b.querySelector(".dish").textContent = c.dish;
+    b.addEventListener("click", () => toggle(c.id));
+    grid.appendChild(b);
+  }
+}
+
+async function render() {
+  const ids = [...votes.keys()];
+  const ps = user && ids.length ? await user.profiles(ids) : {};
+  const nameOf = id => (id === myId ? "You" : (ps[id] && ps[id].name) || "Someone");
+  const avatarOf = id => (ps[id] && ps[id].avatarUrl) || "";
+
+  const tally = new Map(CUISINES.map(c => [c.id, []]));
+  for (const [uid, picks] of votes) for (const p of picks) if (tally.has(p)) tally.get(p).push(uid);
+  const top = Math.max(1, ...[...tally.values()].map(v => v.length));
+  const mine = myPicks();
+  const canVote = !!(db && myId) && !readOnly;
+
+  for (const c of CUISINES) {
+    const b = $("c-" + c.id), voters = tally.get(c.id);
+    const on = mine.includes(c.id);
+    b.setAttribute("aria-pressed", String(on));
+    b.disabled = !canVote;
+    b.querySelector(".n").textContent = voters.length;
+    b.querySelector("small").textContent = voters.length === 1 ? "vote" : "votes";
+    b.querySelector(".bar b").style.width = (voters.length / top * 100) + "%";
+    const faces = b.querySelector(".faces");
+    faces.replaceChildren(...voters.map(uid => {
+      const img = document.createElement("img");
+      img.src = avatarOf(uid); img.alt = nameOf(uid); img.title = nameOf(uid);
+      return img;
+    }));
+    b.setAttribute("aria-label", `${c.name}, ${voters.length} ${voters.length === 1 ? "vote" : "votes"}${on ? ", your pick" : ""}`);
+  }
+
+  // Summary line
+  const lead = $("lead");
+  const ranked = CUISINES.map(c => [c, tally.get(c.id).length]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]);
+  lead.replaceChildren();
+  if (!loaded) lead.textContent = "Loading votes…";
+  else if (!ranked.length) lead.textContent = "No votes yet.";
+  else {
+    const best = ranked[0][1];
+    const leaders = ranked.filter(x => x[1] === best).map(x => x[0].name);
+    lead.append(leaders.length > 1 ? "Tied: " : "Leading: ");
+    const em = document.createElement("em"); em.textContent = leaders.join(" & ");
+    lead.append(em, ` with ${best} ${best === 1 ? "vote" : "votes"}`);
+  }
+  const voters = votes.size;
+  $("meta").firstChild.textContent = `${voters} ${voters === 1 ? "person has" : "people have"} voted · Your picks `;
+  [...$("slots").children].forEach((i, k) => i.classList.toggle("on", k < mine.length));
+
+  // Roll call: you first, then by name
+  const roll = $("roll");
+  const order = ids.sort((a, b) => (a === myId ? -1 : b === myId ? 1 : nameOf(a).localeCompare(nameOf(b))));
+  roll.replaceChildren(...order.map(uid => {
+    const li = document.createElement("li");
+    const img = document.createElement("img"); img.src = avatarOf(uid); img.alt = "";
+    const person = document.createElement("div"); person.className = "person"; person.textContent = nameOf(uid);
+    const picks = document.createElement("div"); picks.className = "picks";
+    for (const p of votes.get(uid)) {
+      const c = CUISINES.find(x => x.id === p); if (!c) continue;
+      const chip = document.createElement("span"); chip.className = "chip"; chip.textContent = c.name;
+      picks.appendChild(chip);
+    }
+    li.append(img, person, picks);
+    return li;
+  }));
+  roll.hidden = !ids.length;
+  $("rollEmpty").hidden = !!ids.length;
+}
+
+function toggle(cid) {
+  if (!db || !myId || readOnly) return;
+  const mine = myPicks();
+  let next;
+  if (mine.includes(cid)) next = mine.filter(x => x !== cid);
+  else if (mine.length >= MAX) { notice("You already have two picks. Tap one of them to remove it, then choose again."); return; }
+  else next = [...mine, cid];
+  notice("");
+  votes.set(myId, next);
+  if (!next.length) votes.delete(myId);
+  render();
+  const ref = db.doc("votes/" + myId);
+  writeChain = writeChain.then(() => next.length ? ref.set({ picks: next, at: Date.now() }) : ref.delete())
+    .catch(e => {
+      if (e && e.code === "invalid_argument") {
+        readOnly = true;
+        notice("You can view this ballot but not vote. Ask the owner for Contributor access.", true);
+      } else if (e && e.code === "quota_exceeded") {
+        notice("The ballot is full and can't take new votes.", true);
+      } else {
+        notice("Your vote didn't save. Check your connection and tap again.", true);
+      }
+      render();
+    });
+}
+
+function setupReset() {
+  const btn = $("resetBtn"), confirmBox = $("resetConfirm");
+  btn.addEventListener("click", () => { btn.hidden = true; confirmBox.hidden = false; $("resetYes").focus(); });
+  $("resetNo").addEventListener("click", () => { confirmBox.hidden = true; btn.hidden = false; btn.focus(); });
+  $("resetYes").addEventListener("click", async () => {
+    $("resetYes").disabled = $("resetNo").disabled = true;
+    try {
+      await writeChain;
+      const snap = await db.collection("votes").get();
+      for (const d of snap.docs) await db.doc("votes/" + d.id).delete();
+      notice(`Cleared ${snap.size} ${snap.size === 1 ? "vote" : "votes"}. The ballot is open again.`);
+    } catch (e) {
+      notice("Some votes didn't clear. Check your connection and try again.", true);
+    }
+    $("resetYes").disabled = $("resetNo").disabled = false;
+    confirmBox.hidden = true; btn.hidden = false;
+  });
+}
+
+async function start() {
+  buildGrid();
+  render();
+  [db, user] = await Promise.all([claude.use("db"), claude.use("user")]);
+  if (user) {
+    const me = await user.me();
+    myId = me.id;
+    if (myId) {
+      $("whoImg").src = me.avatarUrl;
+      $("whoName").textContent = me.name || "Signed in";
+      $("who").hidden = false;
+    }
+  }
+  if (!db || !myId) {
+    loaded = true;
+    notice("Sign in to claude.ai to vote and see everyone's picks.", true);
+    render();
+    return;
+  }
+  // Only the owner may delete other people's votes (see the db rules), so only they see Reset.
+  if (await user.isOwner()) { setupReset(); $("reset").hidden = false; }
+  db.collection("votes").onSnapshot(snap => {
+    const next = new Map();
+    for (const d of snap.docs) {
+      const picks = (d.data().picks || []).filter(p => VALID.has(p)).slice(0, MAX);
+      if (picks.length) next.set(d.id, picks);
+    }
+    votes = next;
+    loaded = true;
+    render();
+  }, () => notice("Live updates stopped. Reload the page to reconnect.", true));
+}
+start();
+</script>
+
+</body>
+</html>
