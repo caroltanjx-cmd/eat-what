@@ -163,6 +163,9 @@ let db = null, user = null, myId = null;
 let votes = new Map();     // userId -> picks[]
 let loaded = false, readOnly = false, unavailable = false;
 let writeChain = Promise.resolve();
+let pending = 0;           // my writes queued or in flight
+let saved = [];            // my picks as the server last confirmed them
+let writeFailed = false;   // a write in this run failed: skip the rest, then roll back
 const $ = id => document.getElementById(id);
 
 function notice(text, isErr) {
@@ -264,22 +267,41 @@ function toggle(cid) {
   else if (mine.length >= MAX) { notice("You already have two picks. Tap one of them to remove it, then choose again."); return; }
   else next = [...mine, cid];
   notice("");
-  votes.set(myId, next);
-  if (!next.length) votes.delete(myId);
+  setMine(next);
   render();
   const ref = db.doc("votes/" + myId);
-  writeChain = writeChain.then(() => next.length ? ref.set({ picks: next, at: Date.now() }) : ref.delete())
-    .catch(e => {
+  pending++;
+  writeChain = writeChain.then(async () => {
+    if (writeFailed) return;
+    try {
+      if (next.length) await ref.set({ picks: next, at: Date.now() });
+      else await ref.delete();
+      saved = next;
+    } catch (e) {
+      writeFailed = true;
       if (e && e.code === "invalid_argument") {
         readOnly = true;
         notice("You can view this ballot but not vote. Ask the owner for Contributor access.", true);
       } else if (e && e.code === "quota_exceeded") {
         notice("The ballot is full and can't take new votes.", true);
       } else {
-        notice("Your vote didn't save. Check your connection and tap again.", true);
+        notice("Your vote didn't save, so your picks are back to what they were. Check your connection and tap again.", true);
       }
+    }
+  }).finally(() => {
+    if (--pending) return;
+    // Once the queue drains after a failure, show what the server actually holds.
+    if (writeFailed) {
+      writeFailed = false;
+      setMine(saved);
       render();
-    });
+    }
+  });
+}
+
+function setMine(picks) {
+  if (picks.length) votes.set(myId, picks);
+  else votes.delete(myId);
 }
 
 function setupReset() {
@@ -330,6 +352,14 @@ async function start() {
     for (const d of snap.docs) {
       const picks = (d.data().picks || []).filter(p => VALID.has(p)).slice(0, MAX);
       if (picks.length) next.set(d.id, picks);
+    }
+    // While my writes are pending this snapshot may predate them, so keep my
+    // local picks instead of letting older ones replace them.
+    if (pending) {
+      const mine = myPicks();
+      if (mine.length) next.set(myId, mine); else next.delete(myId);
+    } else {
+      saved = next.get(myId) || [];
     }
     votes = next;
     loaded = true;
