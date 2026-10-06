@@ -166,6 +166,8 @@ let writeChain = Promise.resolve();
 let pending = 0;           // my writes queued or in flight
 let saved = [];            // my picks as the server last confirmed them
 let writeFailed = false;   // a write in this run failed: skip the rest, then roll back
+let canWrite = null;       // user.can("data.write"): true, false, or null if the platform didn't say
+const VIEW_ONLY = "You can view this ballot but not vote. Ask the owner for Contributor access.";
 const $ = id => document.getElementById(id);
 
 function notice(text, isErr) {
@@ -279,9 +281,11 @@ function toggle(cid) {
       saved = next;
     } catch (e) {
       writeFailed = true;
-      if (e && e.code === "invalid_argument") {
+      // The db has no permission-denied code: a refused write rejects invalid_argument.
+      // Only read it as "no access" when the platform didn't already tell us we can write.
+      if (e && e.code === "invalid_argument" && canWrite === null) {
         readOnly = true;
-        notice("You can view this ballot but not vote. Ask the owner for Contributor access.", true);
+        notice(VIEW_ONLY, true);
       } else if (e && e.code === "quota_exceeded") {
         notice("The ballot is full and can't take new votes.", true);
       } else {
@@ -354,6 +358,12 @@ async function start() {
   }
   // Only the owner may delete other people's votes (see the db rules), so only they see Reset.
   if (await user.isOwner()) { setupReset(); $("reset").hidden = false; }
+  // Check write access up front so a failed write is never the only signal.
+  canWrite = await user.can("data.write");
+  if (canWrite === false) {
+    readOnly = true;
+    notice(VIEW_ONLY, true);
+  }
   db.collection("votes").onSnapshot(snap => {
     const next = new Map();
     for (const d of snap.docs) {
