@@ -299,6 +299,13 @@ function toggle(cid) {
   });
 }
 
+// Anyone can write anything to their own vote doc, so keep only known cuisine ids,
+// each once, and at most MAX of them.
+function cleanPicks(data) {
+  const raw = data && Array.isArray(data.picks) ? data.picks : [];
+  return [...new Set(raw.filter(p => VALID.has(p)))].slice(0, MAX);
+}
+
 function setMine(picks) {
   if (picks.length) votes.set(myId, picks);
   else votes.delete(myId);
@@ -350,7 +357,9 @@ async function start() {
   db.collection("votes").onSnapshot(snap => {
     const next = new Map();
     for (const d of snap.docs) {
-      const picks = (d.data().picks || []).filter(p => VALID.has(p)).slice(0, MAX);
+      // The db rules can't check a vote's shape, so one malformed doc must not break the page.
+      let picks;
+      try { picks = cleanPicks(d.data()); } catch (e) { continue; }
       if (picks.length) next.set(d.id, picks);
     }
     // While my writes are pending this snapshot may predate them, so keep my
