@@ -195,15 +195,17 @@ function buildGrid() {
 }
 
 async function render() {
-  const ids = [...votes.keys()];
+  // A snapshot or a tap can change `votes` while profiles load, so draw from a copy.
+  const shown = new Map(votes);
+  const ids = [...shown.keys()];
   const ps = user && ids.length ? await user.profiles(ids) : {};
   const nameOf = id => (id === myId ? "You" : (ps[id] && ps[id].name) || "Someone");
   const avatarOf = id => (ps[id] && ps[id].avatarUrl) || "";
 
   const tally = new Map(CUISINES.map(c => [c.id, []]));
-  for (const [uid, picks] of votes) for (const p of picks) if (tally.has(p)) tally.get(p).push(uid);
+  for (const [uid, picks] of shown) for (const p of picks) if (tally.has(p)) tally.get(p).push(uid);
   const top = Math.max(1, ...[...tally.values()].map(v => v.length));
-  const mine = myPicks();
+  const mine = shown.get(myId) || [];
   const canVote = !!(db && myId) && !readOnly;
 
   for (const c of CUISINES) {
@@ -237,7 +239,7 @@ async function render() {
     const em = document.createElement("em"); em.textContent = leaders.join(" & ");
     lead.append(em, ` with ${best} ${best === 1 ? "vote" : "votes"}`);
   }
-  const voters = votes.size;
+  const voters = shown.size;
   $("meta").firstChild.textContent = `${voters} ${voters === 1 ? "person has" : "people have"} voted · Your picks `;
   [...$("slots").children].forEach((i, k) => i.classList.toggle("on", k < mine.length));
 
@@ -249,7 +251,7 @@ async function render() {
     const img = document.createElement("img"); img.src = avatarOf(uid); img.alt = "";
     const person = document.createElement("div"); person.className = "person"; person.textContent = nameOf(uid);
     const picks = document.createElement("div"); picks.className = "picks";
-    for (const p of votes.get(uid)) {
+    for (const p of shown.get(uid)) {
       const c = CUISINES.find(x => x.id === p); if (!c) continue;
       const chip = document.createElement("span"); chip.className = "chip"; chip.textContent = c.name;
       picks.appendChild(chip);
