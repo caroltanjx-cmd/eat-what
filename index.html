@@ -161,7 +161,7 @@ const VALID = new Set(CUISINES.map(c => c.id));
 
 let db = null, user = null, myId = null;
 let votes = new Map();     // userId -> picks[]
-let loaded = false, readOnly = false;
+let loaded = false, readOnly = false, unavailable = false;
 let writeChain = Promise.resolve();
 const $ = id => document.getElementById(id);
 
@@ -223,6 +223,7 @@ async function render() {
   const ranked = CUISINES.map(c => [c, tally.get(c.id).length]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]);
   lead.replaceChildren();
   if (!loaded) lead.textContent = "Loading votes…";
+  else if (unavailable) lead.textContent = "Votes aren't available.";
   else if (!ranked.length) lead.textContent = "No votes yet.";
   else {
     const best = ranked[0][1];
@@ -303,6 +304,11 @@ function setupReset() {
 async function start() {
   buildGrid();
   render();
+  // Outside claude.ai (opened as a file, GitHub Pages) there is no artifact runtime.
+  if (typeof claude === "undefined") {
+    stopLoading("Sign in to claude.ai to vote and see everyone's picks.");
+    return;
+  }
   [db, user] = await Promise.all([claude.use("db"), claude.use("user")]);
   if (user) {
     const me = await user.me();
@@ -314,9 +320,7 @@ async function start() {
     }
   }
   if (!db || !myId) {
-    loaded = true;
-    notice("Sign in to claude.ai to vote and see everyone's picks.", true);
-    render();
+    stopLoading("Sign in to claude.ai to vote and see everyone's picks.");
     return;
   }
   // Only the owner may delete other people's votes (see the db rules), so only they see Reset.
@@ -330,9 +334,23 @@ async function start() {
     votes = next;
     loaded = true;
     render();
-  }, () => notice("Live updates stopped. Reload the page to reconnect.", true));
+  }, () => {
+    if (loaded) notice("Live updates stopped. Reload the page to reconnect.", true);
+    else stopLoading("Votes couldn't load. Reload the page to try again.");
+  });
 }
-start();
+
+// Leave the "Loading votes…" state with a message. Voting is turned off, because
+// without the current votes a tap could overwrite your saved picks.
+function stopLoading(msg) {
+  loaded = true;
+  unavailable = true;
+  readOnly = true;
+  notice(msg, true);
+  render();
+}
+
+start().catch(() => stopLoading("Votes couldn't load. Reload the page to try again."));
 </script>
 
 </body>
