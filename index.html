@@ -119,7 +119,7 @@ h2 { font-family: var(--display); font-weight: 700; font-size: 22px; margin: 0 0
 
   <div class="status">
     <div class="lead" id="lead">Loading votes…</div>
-    <div class="meta" id="meta">Your picks <span class="slots" id="slots"><i></i><i></i></span></div>
+    <div class="meta"><span id="votedCount"></span>Your picks <span class="slots" id="slots"><i></i><i></i></span></div>
   </div>
 
   <div class="reset" id="reset" hidden>
@@ -208,7 +208,7 @@ function buildGrid() {
     const b = document.createElement("button");
     b.type = "button"; b.className = "ticket"; b.id = "c-" + c.id;
     b.setAttribute("aria-pressed", "false");
-    b.innerHTML = `<span class="name"></span><span class="count"><span class="n">0</span><small>votes</small></span>
+    b.innerHTML = `<span class="name"></span><span class="count"><span class="n">0</span><small class="unit">votes</small></span>
       <span class="dish"></span><span class="bar"><b></b></span><span class="faces"></span>`;
     b.querySelector(".name").textContent = c.name;
     b.querySelector(".dish").textContent = c.dish;
@@ -217,38 +217,57 @@ function buildGrid() {
   }
 }
 
+let renderSeq = 0;         // render() calls so far: a call that isn't the latest stops after its await
+
+// Draw the page from `votes`. The pieces below each own one part of the page.
 async function render() {
+  const seq = ++renderSeq;
   // A snapshot or a tap can change `votes` while profiles load, so draw from a copy.
   const shown = new Map(votes);
   const ids = [...shown.keys()];
   const ps = user && ids.length ? await user.profiles(ids) : {};
-  const nameOf = id => (id === myId ? "You" : (ps[id] && ps[id].name) || "Someone");
-  const avatarOf = id => ps[id] && ps[id].avatarUrl;
+  // A newer render started while this one waited: it has newer votes, so let it draw.
+  if (seq !== renderSeq) return;
+  const people = {
+    nameOf: id => (id === myId ? "You" : (ps[id] && ps[id].name) || "Someone"),
+    avatarOf: id => ps[id] && ps[id].avatarUrl,
+  };
+  const tally = computeTally(shown);
+  const mine = shown.get(myId) || [];
+  renderTickets(tally, mine, people);
+  renderSummary(tally, shown.size, mine);
+  renderRoll(shown, people);
+}
 
+// cuisine id -> ids of the people who picked it, for every cuisine.
+function computeTally(shown) {
   const tally = new Map(CUISINES.map(c => [c.id, []]));
   for (const [uid, picks] of shown) for (const p of picks) if (tally.has(p)) tally.get(p).push(uid);
-  const top = Math.max(1, ...[...tally.values()].map(v => v.length));
-  const mine = shown.get(myId) || [];
-  const canVote = !!(db && myId) && !readOnly;
+  return tally;
+}
 
+function renderTickets(tally, mine, { nameOf, avatarOf }) {
+  const top = Math.max(1, ...[...tally.values()].map(uids => uids.length));
+  const canVote = !!(db && myId) && !readOnly;
   for (const c of CUISINES) {
-    const b = $("c-" + c.id), voters = tally.get(c.id);
+    const b = $("c-" + c.id), uids = tally.get(c.id), n = uids.length;
     const on = mine.includes(c.id);
     b.setAttribute("aria-pressed", String(on));
     b.disabled = !canVote;
-    b.querySelector(".n").textContent = voters.length;
-    b.querySelector("small").textContent = voters.length === 1 ? "vote" : "votes";
-    b.querySelector(".bar b").style.width = (voters.length / top * 100) + "%";
-    const faces = b.querySelector(".faces");
-    faces.replaceChildren(...voters.map(uid => {
+    b.querySelector(".n").textContent = n;
+    b.querySelector(".unit").textContent = n === 1 ? "vote" : "votes";
+    b.querySelector(".bar b").style.width = (n / top * 100) + "%";
+    b.querySelector(".faces").replaceChildren(...uids.map(uid => {
       const img = avatarImg(avatarOf(uid), nameOf(uid));
       img.title = nameOf(uid);
       return img;
     }));
-    b.setAttribute("aria-label", `${c.name}, ${voters.length} ${voters.length === 1 ? "vote" : "votes"}${on ? ", your pick" : ""}`);
+    b.setAttribute("aria-label", `${c.name}, ${n} ${n === 1 ? "vote" : "votes"}${on ? ", your pick" : ""}`);
   }
+}
 
-  // Summary line
+// The leading cuisine(s), how many people voted, and your filled pick slots.
+function renderSummary(tally, voterCount, mine) {
   const lead = $("lead");
   const ranked = CUISINES.map(c => [c, tally.get(c.id).length]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]);
   lead.replaceChildren();
@@ -262,14 +281,14 @@ async function render() {
     const em = document.createElement("em"); em.textContent = leaders.join(" & ");
     lead.append(em, ` with ${best} ${best === 1 ? "vote" : "votes"}`);
   }
-  const voters = shown.size;
-  $("meta").firstChild.textContent = `${voters} ${voters === 1 ? "person has" : "people have"} voted · Your picks `;
+  $("votedCount").textContent = `${voterCount} ${voterCount === 1 ? "person has" : "people have"} voted · `;
   [...$("slots").children].forEach((i, k) => i.classList.toggle("on", k < mine.length));
+}
 
-  // Roll call: you first, then by name
-  const roll = $("roll");
-  const order = ids.sort((a, b) => (a === myId ? -1 : b === myId ? 1 : nameOf(a).localeCompare(nameOf(b))));
-  roll.replaceChildren(...order.map(uid => {
+// Roll call: you first, then by name
+function renderRoll(shown, { nameOf, avatarOf }) {
+  const order = [...shown.keys()].sort((a, b) => (a === myId ? -1 : b === myId ? 1 : nameOf(a).localeCompare(nameOf(b))));
+  $("roll").replaceChildren(...order.map(uid => {
     const li = document.createElement("li");
     const img = avatarImg(avatarOf(uid), "");
     const person = document.createElement("div"); person.className = "person"; person.textContent = nameOf(uid);
@@ -282,8 +301,8 @@ async function render() {
     li.append(img, person, picks);
     return li;
   }));
-  roll.hidden = !ids.length;
-  $("rollEmpty").hidden = !!ids.length;
+  $("roll").hidden = !order.length;
+  $("rollEmpty").hidden = !!order.length;
 }
 
 function toggle(cid) {
