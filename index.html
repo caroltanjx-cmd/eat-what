@@ -114,7 +114,7 @@ h2 { font-family: var(--display); font-weight: 700; font-size: 22px; margin: 0 0
       <p class="eyebrow">Pick up to two</p>
       <h1>Eat What?</h1>
     </div>
-    <div class="who" id="who" hidden><img id="whoImg" alt=""><span id="whoName"></span></div>
+    <div class="who" id="who" hidden><img id="whoImg" alt="" referrerpolicy="no-referrer"><span id="whoName"></span></div>
   </header>
 
   <div class="status">
@@ -177,6 +177,29 @@ function notice(text, isErr) {
   n.hidden = !text;
 }
 
+// Shown when an avatar is missing or rejected, so an <img> never gets an empty src.
+const NO_AVATAR = "data:image/svg+xml," + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#96a8a0"/></svg>');
+
+// The runtime serves avatars from this page's own origin or as data: images. Load
+// nothing else, so a profile can't point every viewer's browser at another server.
+function safeAvatar(url) {
+  if (typeof url !== "string") return NO_AVATAR;
+  if (/^data:image\//i.test(url)) return url;
+  try {
+    const u = new URL(url, location.href);
+    if (u.protocol === "https:" && u.host === location.host) return u.href;
+  } catch (e) {}
+  return NO_AVATAR;
+}
+
+function avatarImg(url, alt) {
+  const img = document.createElement("img");
+  img.referrerPolicy = "no-referrer"; img.loading = "lazy";
+  img.src = safeAvatar(url); img.alt = alt;
+  return img;
+}
+
 function myPicks() { return votes.get(myId) || []; }
 
 function buildGrid() {
@@ -200,7 +223,7 @@ async function render() {
   const ids = [...shown.keys()];
   const ps = user && ids.length ? await user.profiles(ids) : {};
   const nameOf = id => (id === myId ? "You" : (ps[id] && ps[id].name) || "Someone");
-  const avatarOf = id => (ps[id] && ps[id].avatarUrl) || "";
+  const avatarOf = id => ps[id] && ps[id].avatarUrl;
 
   const tally = new Map(CUISINES.map(c => [c.id, []]));
   for (const [uid, picks] of shown) for (const p of picks) if (tally.has(p)) tally.get(p).push(uid);
@@ -218,8 +241,8 @@ async function render() {
     b.querySelector(".bar b").style.width = (voters.length / top * 100) + "%";
     const faces = b.querySelector(".faces");
     faces.replaceChildren(...voters.map(uid => {
-      const img = document.createElement("img");
-      img.src = avatarOf(uid); img.alt = nameOf(uid); img.title = nameOf(uid);
+      const img = avatarImg(avatarOf(uid), nameOf(uid));
+      img.title = nameOf(uid);
       return img;
     }));
     b.setAttribute("aria-label", `${c.name}, ${voters.length} ${voters.length === 1 ? "vote" : "votes"}${on ? ", your pick" : ""}`);
@@ -248,7 +271,7 @@ async function render() {
   const order = ids.sort((a, b) => (a === myId ? -1 : b === myId ? 1 : nameOf(a).localeCompare(nameOf(b))));
   roll.replaceChildren(...order.map(uid => {
     const li = document.createElement("li");
-    const img = document.createElement("img"); img.src = avatarOf(uid); img.alt = "";
+    const img = avatarImg(avatarOf(uid), "");
     const person = document.createElement("div"); person.className = "person"; person.textContent = nameOf(uid);
     const picks = document.createElement("div"); picks.className = "picks";
     for (const p of shown.get(uid)) {
@@ -349,7 +372,7 @@ async function start() {
     const me = await user.me();
     myId = me.id;
     if (myId) {
-      $("whoImg").src = me.avatarUrl;
+      $("whoImg").src = safeAvatar(me.avatarUrl);
       $("whoName").textContent = me.name || "Signed in";
       $("who").hidden = false;
     }
